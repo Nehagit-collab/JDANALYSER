@@ -55,7 +55,8 @@ The backend handles multi-stream text extraction across both documents, optimize
 [Client Frontend View]  -> (Real-time Dynamic UI Output Rendering)
 
 ```
-Technology Stack
+##Technology Stack
+
 Frontend Layer
 HTML5: Clean structural layout foundations.
 
@@ -75,8 +76,8 @@ Google Gemini API: Core semantic analytical processing engine.
 
 google-genai SDK: Next-generation official integration framework libraries.
 
-Project Structure
-Plaintext
+##Project Structure
+
 JDANALYSER/
 │
 ├── frontend/
