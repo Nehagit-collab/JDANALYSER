@@ -4,13 +4,18 @@ document.getElementById("analyzeForm").addEventListener("submit", async function
     const resumeFile = document.getElementById("resume").files[0];
     const jdFile = document.getElementById("jd").files[0];
     
-    // ✅ Updated targets to match your new modern layout elements
     const submitBtn = document.getElementById("submitBtn");
     const spinner = document.getElementById("loadingSpinner");
     const errorBox = document.getElementById("errorMessage");
     const resultContainer = document.getElementById("resultContainer");
     const analysisOutput = document.getElementById("analysisOutput");
 
+    // Elements for the new match percentage circle indicator
+    const matchScoreContainer = document.getElementById("matchScoreContainer");
+    const scoreRing = document.getElementById("scoreProgressRing");
+    const percentText = document.getElementById("matchPercentageText");
+
+    // Validation
     if (!resumeFile || !jdFile) {
         errorBox.innerText = "Please upload both Resume and JD PDFs.";
         errorBox.style.display = "block";
@@ -21,9 +26,10 @@ document.getElementById("analyzeForm").addEventListener("submit", async function
     formData.append("resume", resumeFile);
     formData.append("jd", jdFile);
 
-    // 🔄 UI State: Reset previous errors/results, lock button, and show loading spinner
+    // UI Reset on Submit
     errorBox.style.display = "none";
     resultContainer.style.display = "none";
+    matchScoreContainer.style.display = "none"; // Hide previous score if re-running
     spinner.style.display = "block";
     submitBtn.disabled = true;
     submitBtn.innerText = "Analyzing... Please wait.";
@@ -42,35 +48,53 @@ document.getElementById("analyzeForm").addEventListener("submit", async function
             return;
         }
 
-        // 🎨 COLOR CONVERSION ENGINE: 
-        // Converts raw Markdown syntax into colorful HTML tags before rendering
-        let rawText = data.analysis;
+        const rawText = data.analysis;
 
-        let formattedHtml = rawText
-            // 1. Convert bold markdown (**text**) into distinct colorful strong tags
-            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-            
-            // 2. Convert markdown headings (### Heading) into stylized h4 headers
-            .replace(/### (.*?)(?:\n|$)/g, '<h4>$1</h4>')
-            
-            // 3. Convert markdown bullet points (* item or - item) into real clean list items
-            .replace(/^\s*[\*\-]\s+(.*?)(?:\n|$)/gm, '<li>$1</li>');
+        // --- EXTRACT AND ANIMATE MATCH PERCENTAGE ---
+        // Searches the text layout response for a percentage format (e.g. "75%")
+        const match = rawText.match(/(\d{1,3})\s*%/);
 
-        // Handle structural cleanup for consecutive <li> elements wrapped in a list context
-        if (formattedHtml.includes('<li>')) {
-            // Simple check to ensure line-broken lists render smoothly
-            formattedHtml = formattedHtml.replace(/(<li>.*?<\/li>)/g, '<ul>$1</ul>').replace(/<\/ul>\s*<ul>/g, '');
+        if (match && match[1]) {
+            const score = parseInt(match[1], 10);
+            matchScoreContainer.style.display = "flex";
+            percentText.innerText = score + "%";
+            
+            // Circumference of a circle with radius 50 = 2 * PI * 50 ≈ 314
+            const circumference = 2 * Math.PI * 50;
+            const offset = circumference - (score / 100) * circumference;
+            
+            // Set initial layout properties to re-trigger transition properly
+            scoreRing.style.strokeDasharray = circumference;
+            scoreRing.style.strokeDashoffset = offset;
+
+            // Apply specific accent colors on the progress indicator contextually
+            if (score >= 80) {
+                scoreRing.style.stroke = "#10b981"; // Emerald Green for high match
+                percentText.style.color = "#10b981";
+            } else if (score >= 50) {
+                scoreRing.style.stroke = "#a855f7"; // Vibrant Purple for medium match
+                percentText.style.color = "#a855f7";
+            } else {
+                scoreRing.style.stroke = "#ef4444"; // System Red for low match
+                percentText.style.color = "#ef4444";
+            }
         }
 
-        // ✅ Inject the HTML structure using innerHTML so the CSS styling engine can colorize it
-        analysisOutput.innerHTML = formattedHtml;
+        // Use Marked.js to parse markdown natively into clean, perfectly-spaced HTML
+        if (typeof marked !== 'undefined') {
+            analysisOutput.innerHTML = marked.parse(rawText);
+        } else {
+            // Safe emergency fallback if the CDN script fails to load
+            analysisOutput.innerText = rawText;
+        }
+
         resultContainer.style.display = "block";
 
     } catch (error) {
         errorBox.innerText = "Request failed: " + error.message;
         errorBox.style.display = "block";
     } finally {
-        // 🔄 UI State Reset: Hide spinner and unlock submit button
+        // UI Reset on Complete
         spinner.style.display = "none";
         submitBtn.disabled = false;
         submitBtn.innerText = "Analyze Match";

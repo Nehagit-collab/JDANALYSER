@@ -1,47 +1,39 @@
 import os
+import time
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from pypdf import PdfReader
 from dotenv import load_dotenv
+# Import the modern Google GenAI SDK
 from google import genai
 
+# Load environment variables from .env file
 load_dotenv()
 
-
-
-key = os.getenv("GEMINI_API_KEY")
-
-print("--- DIAGNOSTIC CHECK ---")
-if key is None:
-    print("❌ NOT LOADED: GEMINI_API_KEY is completely missing or returns None.")
-    print("👉 Check if your file is named exactly '.env' (not 'gemini.env' or '.env.txt')")
-elif key.strip() == "":
-    print("❌ EMPTY: The variable exists but it is blank.")
-else:
-    print("✅ LOADED SUCCESSFULLY!")
-    print(f"Prefix check: {key[:7]}...")
-    print(f"Total length: {len(key)} characters")
-    
-    if not key.startswith("AIzaSy"):
-        print("⚠️ WARNING: Your key does not start with 'AIzaSy'. This usually means it is a Google Cloud service account token or an OAuth credential instead of a standard Google AI Studio API key.")
 app = Flask(__name__)
 CORS(app)
 
-if not os.getenv("GEMINI_API_KEY"):
-    raise RuntimeError("GEMINI_API_KEY not set")
-
-client = genai.Client()
-MODEL_NAME = "gemini-2.5-flash"
+# Initialize the Gemini Client
+# It automatically looks for the GEMINI_API_KEY environment variable
+try:
+    client = genai.Client()
+except Exception as e:
+    raise RuntimeError("Failed to initialize Gemini Client. Ensure GEMINI_API_KEY is set in your venv or .env file.") from e
 
 def extract_text_from_pdf(file):
-    reader = PdfReader(file)
-    text = ""
-    for page in reader.pages:
-        text += page.extract_text() or ""
-    return text.strip()
+    """Extracts text content cleanly from an uploaded PDF file."""
+    try:
+        reader = PdfReader(file)
+        text = ""
+        for page in reader.pages:
+            text += page.extract_text() or ""
+        return text.strip()
+    except Exception as e:
+        raise ValueError(f"Failed to parse PDF file: {str(e)}")
 
 @app.route("/", methods=["GET"])
 def health_check():
+    """Simple health check endpoint to verify backend status."""
     return jsonify({
         "status": "Backend running",
         "message": "JD Analyser API is live"
@@ -50,15 +42,21 @@ def health_check():
 @app.route("/analyze", methods=["POST"])
 def analyze():
     try:
+        # 1. Fetch files from the incoming request
         resume_file = request.files.get("resume")
         jd_file = request.files.get("jd")
 
         if not resume_file or not jd_file:
-            return jsonify({"error": "Resume PDF and JD PDF required"}), 400
+            return jsonify({"error": "Both Resume PDF and Job Description PDF are required."}), 400
 
+        # 2. Extract text from both PDFs
         resume_text = extract_text_from_pdf(resume_file)
         jd_text = extract_text_from_pdf(jd_file)
 
+        if not resume_text or not jd_text:
+            return jsonify({"error": "Could not extract text from one or both PDFs. Ensure they aren't scanned images."}), 400
+
+        # 3. Construct the prompt for Gemini 3
         prompt = f"""
 You are an expert AI resume screening assistant and recruitment specialist.
 
@@ -76,17 +74,66 @@ JOB DESCRIPTION:
 {jd_text}
 """
 
-        response = client.models.generate_content(
-            model=MODEL_NAME,
-            contents=prompt
-        )
+        # 4. Define our preferred model sequence and retry parameters
+        models_to_try = ['gemini-3.5-flash', 'gemini-3.1-flash-lite']
+        max_retries = 2
+        retry_delay = 2  # initial delay in seconds
+        
+        response = None
+        last_error = None
 
-        return jsonify({
-            "analysis": response.text
-        }), 200
+        # Outer loop iterates through models (Primary -> Fallback)
+        for model_name in models_to_try:
+            # Inner loop handles temporary 503 traffic spikes for the active model
+            for attempt in range(max_retries):
+                try:
+                    print(f"Sending request using model: {model_name} (Attempt {attempt + 1})")
+                    
+                    response = client.models.generate_content(
+                        model=model_name,
+                        contents=prompt,
+                    )
+                    # If execution reaches here, it succeeded! Break inner loop
+                    break
+                    
+                except Exception as e:
+                    last_error = e
+                    err_msg = str(e).upper()
+                    
+                    # If it's a 503/Congestion error, wait a moment and try again
+                    if "503" in err_msg or "UNAVAILABLE" in err_msg:
+                        if attempt < max_retries - 1:
+                            print(f"{model_name} busy. Retrying in {retry_delay}s...")
+                            time.sleep(retry_delay)
+                            retry_delay *= 2  # Exponential backoff
+                            continue
+                    
+                    # If it's a structural error (like 400 or 403), break immediately to try the fallback model
+                    break
+            
+            # If we successfully got a response from the current model, stop trying other models
+            if response:
+                break
+
+        # 5. Handle final response or throw terminal error
+        if response and response.text:
+            return jsonify({
+                "analysis": response.text
+            }), 200
+        else:
+            # If everything failed, bubble up the exception text
+            raise last_error if last_error else Exception("Unknown error occurred during processing.")
 
     except Exception as e:
+        err_msg = str(e).upper()
+        # Send clean user-facing error strings back to the UI
+        if "503" in err_msg or "UNAVAILABLE" in err_msg:
+            return jsonify({"error": "Gemini servers are currently overloaded. Please wait a moment and click Analyze again."}), 503
+        elif "403" in err_msg or "APIKEY" in err_msg:
+            return jsonify({"error": "Authentication failed. Please verify your GEMINI_API_KEY environment variable."}), 403
+        
         return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    # Ensure port 5000 is matching your frontend fetch call
+    app.run(debug=True, port=5000)

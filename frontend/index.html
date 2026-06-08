@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Resume & JD Analyzer</title>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <style>
         :root {
             /* Vibrant Cosmic Palette */
@@ -155,9 +156,8 @@
             padding-bottom: 8px;
         }
 
-        /* This targets the exact text layout inside the output box */
+        /* Removed white-space: pre-wrap; to prevent double-spacing with Marked.js */
         .analysis-text {
-            white-space: pre-wrap;
             font-size: 15px;
             color: var(--output-text);
             font-weight: 500;
@@ -166,11 +166,11 @@
         /* Forces any Markdown/HTML headers generated inside to turn vibrant Indigo */
         .analysis-text h1, .analysis-text h2, .analysis-text h3, .analysis-text h4 {
             color: var(--output-header);
-            margin-top: 15px;
-            margin-bottom: 8px;
+            margin-top: 20px;
+            margin-bottom: 10px;
         }
 
-        /* Forces any bolded words (**like keywords**) to catch the eye in dark crimson/red */
+        /* Forces any bolded words to catch the eye in dark crimson/red */
         .analysis-text strong, .analysis-text b {
             color: var(--output-bold);
             font-weight: 700;
@@ -182,6 +182,8 @@
         /* Style lists if your script outputs bullet points */
         .analysis-text ul {
             padding-left: 20px;
+            margin-top: 8px;
+            margin-bottom: 8px;
         }
 
         .analysis-text li {
@@ -190,6 +192,12 @@
 
         .analysis-text li::marker {
             color: var(--output-list-dot); /* Custom pink bullets */
+        }
+
+        /* Tighten up paragraph margins for standard text blocks */
+        .analysis-text p {
+            margin-top: 6px;
+            margin-bottom: 12px;
         }
 
         /* Alert Styling for Errors */
@@ -229,6 +237,18 @@
 
         <div class="result-container" id="resultContainer">
             <h3>Analysis Results</h3>
+            
+            <div id="matchScoreContainer" style="display: none; flex-direction: column; align-items: center; margin-bottom: 25px; background: #fff; padding: 20px; border-radius: 12px; box-shadow: inset 0 0 10px rgba(0,0,0,0.02);">
+                <span style="font-weight: 700; color: var(--text-color); margin-bottom: 8px; font-size: 14px; letter-spacing: 0.5px; text-transform: uppercase;">Overall Skill Alignment</span>
+                <div style="position: relative; width: 120px; height: 120px; display: flex; align-items: center; justify-content: center;">
+                    <svg style="transform: rotate(-90deg); width: 120px; height: 120px;">
+                        <circle cx="60" cy="60" r="50" style="fill: transparent; stroke: #f1f5f9; stroke-width: 10;"></circle>
+                        <circle id="scoreProgressRing" cx="60" cy="60" r="50" style="fill: transparent; stroke: #cbd5e1; stroke-width: 10; stroke-dasharray: 314; stroke-dashoffset: 314; stroke-linecap: round; transition: stroke-dashoffset 1.5s ease-in-out, stroke 1.5s ease;"></circle>
+                    </svg>
+                    <div id="matchPercentageText" style="position: absolute; font-size: 26px; font-weight: 800; color: #4338ca;">0%</div>
+                </div>
+            </div>
+
             <div class="analysis-text" id="analysisOutput"></div>
         </div>
     </div>
