@@ -11,8 +11,10 @@ from google import genai
 load_dotenv()
 
 # CHANGED: Configure Flask to look one folder back for your frontend assets
+# UPDATE THIS BLOCK: Add static_url_path=''
 app = Flask(
     __name__, 
+    static_url_path='',  # This tells Flask to serve script.js directly at the root level!
     static_folder='../frontend', 
     template_folder='../frontend'
 )
