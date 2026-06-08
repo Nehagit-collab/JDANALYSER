@@ -1,6 +1,6 @@
 import os
 import time
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 from pypdf import PdfReader
 from dotenv import load_dotenv
@@ -10,7 +10,12 @@ from google import genai
 # Load environment variables from .env file
 load_dotenv()
 
-app = Flask(__name__)
+# CHANGED: Configure Flask to look one folder back for your frontend assets
+app = Flask(
+    __name__, 
+    static_folder='../frontend', 
+    template_folder='../frontend'
+)
 CORS(app)
 
 # Initialize the Gemini Client
@@ -31,13 +36,11 @@ def extract_text_from_pdf(file):
     except Exception as e:
         raise ValueError(f"Failed to parse PDF file: {str(e)}")
 
+# CHANGED: This route now serves your frontend user interface file directly
 @app.route("/", methods=["GET"])
 def health_check():
-    """Simple health check endpoint to verify backend status."""
-    return jsonify({
-        "status": "Backend running",
-        "message": "JD Analyser API is live"
-    }), 200
+    """Serves the main frontend application file."""
+    return send_from_directory(app.static_folder, 'index.html')
 
 @app.route("/analyze", methods=["POST"])
 def analyze():
