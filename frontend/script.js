@@ -1,3 +1,4 @@
+// Live production script tracking
 document.getElementById("analyzeForm").addEventListener("submit", async function (e) {
     e.preventDefault();
 
