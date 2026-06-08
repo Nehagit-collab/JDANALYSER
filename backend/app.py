@@ -142,3 +142,14 @@ JOB DESCRIPTION:
 if __name__ == "__main__":
     # Ensure port 5000 is matching your frontend fetch call
     app.run(debug=True, port=5000)
+    
+# Initialize the Gemini Client explicitly using the environment variable
+try:
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise ValueError("GEMINI_API_KEY is completely missing from environment variables.")
+    
+    # Passing api_key directly prevents the SDK from falling back to OAuth tokens
+    client = genai.Client(api_key=api_key)
+except Exception as e:
+    raise RuntimeError("Failed to initialize Gemini Client. Check your Render Environment variables.") from e
