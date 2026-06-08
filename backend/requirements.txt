@@ -3,3 +3,4 @@ flask-cors
 pypdf
 google-genai
 gunicorn
+python-dotenv
