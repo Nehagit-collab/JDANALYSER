@@ -1,4 +1,5 @@
 flask
-pdfplumber
-python-dotenv
-google-generativeai
+flask-cors
+pypdf
+google-genai
+gunicorn
