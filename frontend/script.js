@@ -36,7 +36,8 @@ document.getElementById("analyzeForm").addEventListener("submit", async function
     submitBtn.innerText = "Analyzing... Please wait.";
 
     try {
-        const response = await fetch("http://127.0.0.1:5000/analyze", {
+        // FIXED: Replaced hardcoded local IP address with a relative production path
+        const response = await fetch("/analyze", {
             method: "POST",
             body: formData
         });
