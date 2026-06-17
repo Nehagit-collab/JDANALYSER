@@ -4,28 +4,30 @@ from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 from pypdf import PdfReader
 from dotenv import load_dotenv
-# Import the modern Google GenAI SDK
 from google import genai
 
-# Load environment variables from .env file
-load_dotenv()
+# 1. Target and load the .env file located in the main root folder (one level back from the backend folder)
+root_env_path = os.path.join(os.path.dirname(__file__), '..', '.env')
+load_dotenv(dotenv_path=root_env_path)
 
-# CHANGED: Configure Flask to look one folder back for your frontend assets
-# UPDATE THIS BLOCK: Add static_url_path=''
+# 2. Initialize the Gemini Client explicitly using the verified API key from the root folder
+try:
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise ValueError("GEMINI_API_KEY is completely missing from the .env file in your main root folder.")
+    
+    client = genai.Client(api_key=api_key)
+except Exception as e:
+    raise RuntimeError(f"Failed to initialize Gemini Client: {str(e)}")
+
+# 3. Configure Flask to serve assets out of your sibling frontend folder
 app = Flask(
     __name__, 
-    static_url_path='',  # This tells Flask to serve script.js directly at the root level!
+    static_url_path='',  # Serves script.js directly at the root endpoint level
     static_folder='../frontend', 
     template_folder='../frontend'
 )
 CORS(app)
-
-# Initialize the Gemini Client
-# It automatically looks for the GEMINI_API_KEY environment variable
-try:
-    client = genai.Client()
-except Exception as e:
-    raise RuntimeError("Failed to initialize Gemini Client. Ensure GEMINI_API_KEY is set in your venv or .env file.") from e
 
 def extract_text_from_pdf(file):
     """Extracts text content cleanly from an uploaded PDF file."""
@@ -38,30 +40,29 @@ def extract_text_from_pdf(file):
     except Exception as e:
         raise ValueError(f"Failed to parse PDF file: {str(e)}")
 
-# CHANGED: This route now serves your frontend user interface file directly
 @app.route("/", methods=["GET"])
 def health_check():
-    """Serves the main frontend application file."""
+    """Serves the main frontend application file UI directly."""
     return send_from_directory(app.static_folder, 'index.html')
 
 @app.route("/analyze", methods=["POST"])
 def analyze():
     try:
-        # 1. Fetch files from the incoming request
+        # Fetch files from the incoming request payload
         resume_file = request.files.get("resume")
         jd_file = request.files.get("jd")
 
         if not resume_file or not jd_file:
             return jsonify({"error": "Both Resume PDF and Job Description PDF are required."}), 400
 
-        # 2. Extract text from both PDFs
+        # Extract text from both documents
         resume_text = extract_text_from_pdf(resume_file)
         jd_text = extract_text_from_pdf(jd_file)
 
         if not resume_text or not jd_text:
-            return jsonify({"error": "Could not extract text from one or both PDFs. Ensure they aren't scanned images."}), 400
+            return jsonify({"error": "Could not extract readable text from one or both PDFs. Ensure they aren't scanned images."}), 400
 
-        # 3. Construct the prompt for Gemini 3
+        # Construct the optimized prompt context for Gemini
         prompt = f"""
 You are an expert AI resume screening assistant and recruitment specialist.
 
@@ -79,17 +80,15 @@ JOB DESCRIPTION:
 {jd_text}
 """
 
-        # 4. Define our preferred model sequence and retry parameters
-        models_to_try = ['gemini-3.5-flash', 'gemini-3.1-flash-lite']
+        # Current supported flagship models for the modern Google GenAI SDK
+        models_to_try = ['gemini-2.5-flash', 'gemini-2.5-pro']
         max_retries = 2
         retry_delay = 2  # initial delay in seconds
         
         response = None
         last_error = None
 
-        # Outer loop iterates through models (Primary -> Fallback)
         for model_name in models_to_try:
-            # Inner loop handles temporary 503 traffic spikes for the active model
             for attempt in range(max_retries):
                 try:
                     print(f"Sending request using model: {model_name} (Attempt {attempt + 1})")
@@ -98,58 +97,41 @@ JOB DESCRIPTION:
                         model=model_name,
                         contents=prompt,
                     )
-                    # If execution reaches here, it succeeded! Break inner loop
-                    break
+                    break  # Break inner retry loop on success
                     
                 except Exception as e:
                     last_error = e
                     err_msg = str(e).upper()
                     
-                    # If it's a 503/Congestion error, wait a moment and try again
+                    # Exponential backoff for temporary remote 503 traffic spikes
                     if "503" in err_msg or "UNAVAILABLE" in err_msg:
                         if attempt < max_retries - 1:
                             print(f"{model_name} busy. Retrying in {retry_delay}s...")
                             time.sleep(retry_delay)
-                            retry_delay *= 2  # Exponential backoff
+                            retry_delay *= 2
                             continue
-                    
-                    # If it's a structural error (like 400 or 403), break immediately to try the fallback model
-                    break
+                    break  # Break out to try fallback model if it's a structural 400/401/403/404 error
             
-            # If we successfully got a response from the current model, stop trying other models
             if response:
-                break
+                break  # Stop trying fallback models if primary succeeded
 
-        # 5. Handle final response or throw terminal error
         if response and response.text:
-            return jsonify({
-                "analysis": response.text
-            }), 200
+            return jsonify({"analysis": response.text}), 200
         else:
-            # If everything failed, bubble up the exception text
             raise last_error if last_error else Exception("Unknown error occurred during processing.")
 
     except Exception as e:
         err_msg = str(e).upper()
-        # Send clean user-facing error strings back to the UI
+        print(f"Error caught in processing pipeline: {err_msg}")
+        
         if "503" in err_msg or "UNAVAILABLE" in err_msg:
-            return jsonify({"error": "Gemini servers are currently overloaded. Please wait a moment and click Analyze again."}), 503
-        elif "403" in err_msg or "APIKEY" in err_msg:
-            return jsonify({"error": "Authentication failed. Please verify your GEMINI_API_KEY environment variable."}), 403
+            return jsonify({"error": "Gemini servers are currently overloaded. Please wait a moment and try again."}), 503
+        elif "403" in err_msg or "401" in err_msg or "APIKEY" in err_msg:
+            return jsonify({"error": "Authentication failed. Please verify your GEMINI_API_KEY value inside the main folder .env file."}), 403
+        elif "404" in err_msg:
+            return jsonify({"error": "Targeted model generation route was not found. Please verify SDK compatibility."}), 404
         
         return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
-    # Ensure port 5000 is matching your frontend fetch call
     app.run(debug=True, port=5000)
-    
-# Initialize the Gemini Client explicitly using the environment variable
-try:
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        raise ValueError("GEMINI_API_KEY is completely missing from environment variables.")
-    
-    # Passing api_key directly prevents the SDK from falling back to OAuth tokens
-    client = genai.Client(api_key=api_key)
-except Exception as e:
-    raise RuntimeError("Failed to initialize Gemini Client. Check your Render Environment variables.") from e

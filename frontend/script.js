@@ -11,7 +11,7 @@ document.getElementById("analyzeForm").addEventListener("submit", async function
     const resultContainer = document.getElementById("resultContainer");
     const analysisOutput = document.getElementById("analysisOutput");
 
-    // Elements for the new match percentage circle indicator
+    // Elements for the match percentage circle indicator
     const matchScoreContainer = document.getElementById("matchScoreContainer");
     const scoreRing = document.getElementById("scoreProgressRing");
     const percentText = document.getElementById("matchPercentageText");
@@ -30,7 +30,7 @@ document.getElementById("analyzeForm").addEventListener("submit", async function
     // UI Reset on Submit
     errorBox.style.display = "none";
     resultContainer.style.display = "none";
-    matchScoreContainer.style.display = "none"; // Hide previous score if re-running
+    matchScoreContainer.style.display = "none"; // Hide previous metrics on recalculation
     spinner.style.display = "block";
     submitBtn.disabled = true;
     submitBtn.innerText = "Analyzing... Please wait.";
@@ -43,30 +43,35 @@ document.getElementById("analyzeForm").addEventListener("submit", async function
 
         const data = await response.json();
 
+        // Structural fix: throwing an explicit error safely forwards control to catch block
         if (!response.ok) {
-            errorBox.innerText = "Error: " + (data.error || "Unknown error");
-            errorBox.style.display = "block";
-            return;
+            throw new Error(data.error || `Server responded with status ${response.status}`);
         }
 
         const rawText = data.analysis;
 
         // --- EXTRACT AND ANIMATE MATCH PERCENTAGE ---
-        // Searches the text layout response for a percentage format (e.g. "75%")
         const match = rawText.match(/(\d{1,3})\s*%/);
 
         if (match && match[1]) {
-            const score = parseInt(match[1], 10);
+            let score = parseInt(match[1], 10);
+            // Safeguard boundaries between 0% and 100%
+            score = Math.min(Math.max(score, 0), 100);
+
             matchScoreContainer.style.display = "flex";
             percentText.innerText = score + "%";
             
-            // Circumference of a circle with radius 50 = 2 * PI * 50 ≈ 314
+            // Circumference calculation of a circle with radius 50 = 2 * PI * 50 ≈ 314
             const circumference = 2 * Math.PI * 50;
             const offset = circumference - (score / 100) * circumference;
             
-            // Set initial layout properties to re-trigger transition properly
+            // Establish visual circumference layout settings
             scoreRing.style.strokeDasharray = circumference;
-            scoreRing.style.strokeDashoffset = offset;
+            
+            // Micro-timeout ensures CSS layout pipeline executes animation transition smoothly
+            setTimeout(() => {
+                scoreRing.style.strokeDashoffset = offset;
+            }, 50);
 
             // Apply specific accent colors on the progress indicator contextually
             if (score >= 80) {
@@ -81,21 +86,21 @@ document.getElementById("analyzeForm").addEventListener("submit", async function
             }
         }
 
-        // Use Marked.js to parse markdown natively into clean, perfectly-spaced HTML
+        // Use Marked.js to parse markdown natively into clean HTML
         if (typeof marked !== 'undefined') {
             analysisOutput.innerHTML = marked.parse(rawText);
         } else {
-            // Safe emergency fallback if the CDN script fails to load
+            // Emergency layout text fallback if CDN script links fail to mount
             analysisOutput.innerText = rawText;
         }
 
         resultContainer.style.display = "block";
 
     } catch (error) {
-        errorBox.innerText = "Request failed: " + error.message;
+        errorBox.innerText = "Error: " + error.message;
         errorBox.style.display = "block";
     } finally {
-        // UI Reset on Complete
+        // UI Clean up execution
         spinner.style.display = "none";
         submitBtn.disabled = false;
         submitBtn.innerText = "Analyze Match";
